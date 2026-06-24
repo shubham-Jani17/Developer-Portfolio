@@ -1,5 +1,3 @@
-
-💼 Dynamic Portfolio &amp; Admin Dashboard built with React.js, FastAPI, and MySQL. Showcases projects, skills, experience, blogs, and achievements while providing secure content management, resume updates, social link management, and contact handling. 🚀
 # 🌟 Shubham's Developer Portfolio & Admin Dashboard 🚀
 
 💼 Dynamic Portfolio &amp; Admin Dashboard built with React.js, FastAPI, and MySQL. Showcases projects, skills, experience, blogs, and achievements while providing secure content management, resume updates, social link management, and contact handling. 🚀
