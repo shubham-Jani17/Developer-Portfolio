@@ -30,10 +30,18 @@ def ensure_database_exists(mysql_url: str):
         print(f"Warning: Could not verify or create database automatically: {e}")
 
 # Run the database verification/creation before creating the main engine
-ensure_database_exists(settings.MYSQL_URL)
+# ensure_database_exists(settings.MYSQL_URL)
 
 # 2. MAIN DATABASE ENGINE
-engine = create_engine(settings.MYSQL_URL, pool_pre_ping=True)
+engine = create_engine(
+    settings.MYSQL_URL,
+    pool_pre_ping=True,
+    connect_args={
+        "ssl": {
+            "ssl_verify_cert": True
+        }
+    }
+)
 
 # 3. SESSION MAKER
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
