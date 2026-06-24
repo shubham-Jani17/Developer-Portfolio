@@ -76,6 +76,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3001",
         "http://127.0.0.1:3001",
+        "https://developer-portfolio-delta-amber.vercel.app"
     ],
     allow_credentials=True,   # Required for cookies to be sent cross-origin
     allow_methods=["*"],
@@ -283,8 +284,8 @@ def login(request: Request, admin_login: AdminLogin, db: Session = Depends(get_d
         key="admin_session",
         value=settings.SESSION_SECRET,
         httponly=True,        # Invisible to JavaScript — XSS safe
-        samesite="strict",    # Blocks cross-site requests — CSRF safe
-        secure=False,         # Set True when deploying on HTTPS
+        samesite="none",    # Blocks cross-site requests — CSRF safe
+        secure=True,         # Set True when deploying on HTTPS
         max_age=60 * 60 * 8,  # 8 hours
         path="/",
     )
