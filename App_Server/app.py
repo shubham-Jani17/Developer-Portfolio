@@ -76,7 +76,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3001",
         "http://127.0.0.1:3001",
-        "https://developer-portfolio-delta-amber.vercel.app"
+        "https://shubhamjani-portfolio.vercel.app"
     ],
     allow_credentials=True,   # Required for cookies to be sent cross-origin
     allow_methods=["*"],
