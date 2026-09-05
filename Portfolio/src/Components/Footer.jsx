@@ -48,10 +48,6 @@ export default function Footer() {
 
   return (
     <footer className="page-container relative pb-12 sm:pb-16 md:pb-20 pt-6 sm:pt-8">
-      <p className="footer-watermark pointer-events-none select-none" aria-hidden>
-        {site.name.toUpperCase()}
-      </p>
-
       <GlassCard className="footer-card relative z-10 overflow-hidden p-5 sm:p-8 md:p-10 lg:p-12">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_0.7fr] gap-8 sm:gap-10 lg:gap-12">
           {/* Brand */}
