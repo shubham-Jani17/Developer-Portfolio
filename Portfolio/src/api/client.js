@@ -1,4 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? "";
+const rawBase = import.meta.env.VITE_API_URL ?? "";
+const API_BASE = rawBase.endsWith("/") ? rawBase.slice(0, -1) : rawBase;
+
 
 // --- Auth helpers ---
 // No more sessionStorage — the browser automatically manages the HttpOnly cookie.
