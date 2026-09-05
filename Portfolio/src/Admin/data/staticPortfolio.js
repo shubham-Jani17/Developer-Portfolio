@@ -19,19 +19,37 @@ import {
 } from "./portfolio.js";
 
 export function getStaticPortfolio() {
+  const staticProjects = projects.map((p, i) => ({ ...p, id: p.id || `proj-${i}`, archived: p.archived ?? false }));
+  const staticSkillCategories = skillsSection.categories;
+
+  // Auto-compute shipped/tech counts from static data
+  const shippedCount = staticProjects.filter((p) => !p.archived).length;
+  const allSkillNames = new Set(
+    staticSkillCategories.flatMap((cat) =>
+      (cat.items ?? []).map((item) => item.name?.trim().toLowerCase()).filter(Boolean)
+    )
+  );
+  const techCount = allSkillNames.size;
+  const computedStats = stats.map((stat) => {
+    const label = stat.label?.toLowerCase() ?? "";
+    if (label === "projects shipped") return { ...stat, value: `${shippedCount}+` };
+    if (label === "tech stacks mastered") return { ...stat, value: `${techCount}+` };
+    return stat;
+  });
+
   return {
     site,
     hero: { ...hero, image: hero.image || HERO_PORTRAIT_URL },
     statement,
     mission,
-    stats,
+    stats: computedStats,
     social,
     contactSection,
     footer,
     navLinks,
     skillsSection,
     projectsSection,
-    projects: projects.map((p, i) => ({ ...p, id: p.id || `proj-${i}`, archived: p.archived ?? false })),
+    projects: staticProjects,
     experienceSection,
     experience: experience.map((e, i) => ({ ...e, id: e.id || `exp-${i}`, archived: e.archived ?? false })),
     sections,
@@ -54,7 +72,43 @@ function validateSkills(skills) {
   );
 }
 
-/** Ensures API/CMS data always has the shape the public site expects, taking unmanaged data strictly from the static fallback. */
+/**
+ * Labels (lowercased) that identify the auto-computed stat cards.
+ * These values are matched against stat.label for replacement.
+ */
+const PROJECTS_LABEL = "projects shipped";
+const TECH_LABEL = "tech stacks mastered";
+
+/**
+ * Replaces "PROJECTS SHIPPED" and "TECH STACKS MASTERED" stat values
+ * with live counts derived from the current projects list and skills categories.
+ * All other stats are left untouched.
+ */
+function computeStats(stats, projects, skillCategories) {
+  // Count non-archived projects
+  const shippedCount = (projects ?? []).filter((p) => !p.archived).length;
+
+  // Count unique skill names across all categories
+  const allSkillNames = new Set(
+    (skillCategories ?? []).flatMap((cat) =>
+      (cat.items ?? []).map((item) => item.name?.trim().toLowerCase()).filter(Boolean)
+    )
+  );
+  const techCount = allSkillNames.size;
+
+  return (stats ?? []).map((stat) => {
+    const label = stat.label?.toLowerCase() ?? "";
+    if (label === PROJECTS_LABEL) {
+      return { ...stat, value: `${shippedCount}+` };
+    }
+    if (label === TECH_LABEL) {
+      return { ...stat, value: `${techCount}+` };
+    }
+    return stat;
+  });
+}
+
+
 export function normalizePortfolio(raw) {
   const fallback = getStaticPortfolio();
   if (!raw || typeof raw !== "object" || Object.keys(raw).length === 0) {
@@ -63,6 +117,13 @@ export function normalizePortfolio(raw) {
 
   const rawSkills = raw.skills || raw.skillsSection?.categories;
   const skillsToUse = validateSkills(rawSkills) ? rawSkills : fallback.skillsSection.categories;
+
+  const resolvedProjects = asArray(raw.projects, fallback.projects);
+  const resolvedStats = computeStats(
+    asArray(raw.stats, fallback.stats),
+    resolvedProjects,
+    skillsToUse
+  );
 
   return {
     ...fallback,
@@ -88,10 +149,10 @@ export function normalizePortfolio(raw) {
       tags: asArray(raw.mission?.tags, fallback.mission.tags),
     },
 
-    // Fully managed sections
-    stats: asArray(raw.stats, fallback.stats),
+    // Fully managed sections — stats auto-computed from live projects & skills
+    stats: resolvedStats,
     social: asArray(raw.social, fallback.social),
-    projects: asArray(raw.projects, fallback.projects),
+    projects: resolvedProjects,
     experience: asArray(raw.experience, fallback.experience),
     blogs: asArray(raw.blogs, fallback.blogs),
     
