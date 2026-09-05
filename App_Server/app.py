@@ -8,8 +8,7 @@ from typing import Optional, List
 
 from fastapi import FastAPI, Depends, HTTPException, Request, status, Body, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -23,6 +22,7 @@ MAX_VISITOR_IDS = 50000
 APP_SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(APP_SERVER_DIR)  
 PUBLIC_DIR = os.path.join(BASE_DIR, "Portfolio", "public")
+SERVER_PUBLIC_DIR = os.path.join(APP_SERVER_DIR, "public")
 
 import hashlib
 from cryptography.fernet import Fernet
@@ -71,17 +71,25 @@ class MessageUpdate(BaseModel):
 # 4. APP SETUP
 app = FastAPI(title="Portfolio API")
 
+# Parse origins from environment config
+cors_origins_list = [
+    origin.strip()
+    for origin in settings.CORS_ORIGINS.split(",")
+    if origin.strip()
+]
+for default_origin in ["http://localhost:3001", "http://127.0.0.1:3001", "http://localhost:3000"]:
+    if default_origin not in cors_origins_list:
+        cors_origins_list.append(default_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "https://shubhamjani-portfolio.vercel.app"
-    ],
+    allow_origins=cors_origins_list,
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Automatically allow any Vercel domain
     allow_credentials=True,   # Required for cookies to be sent cross-origin
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 
 security = None  # HTTPBearer removed — now using HttpOnly cookies
@@ -94,15 +102,24 @@ def get_client_ip(request: Request) -> str:
         return x_forwarded_for.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
+def is_secure_context(request: Request) -> bool:
+    proto = request.headers.get("x-forwarded-proto", "")
+    is_https = request.url.scheme == "https" or proto.lower() == "https"
+    return is_https or settings.ENVIRONMENT.lower() == "production"
+
 def check_admin(request: Request):
-    """Validate the HttpOnly session cookie on every protected route."""
+    """Validate the HttpOnly session cookie or Bearer token on every protected route."""
     session = request.cookies.get("admin_session")
-    if not session or session != settings.SESSION_SECRET:
+    auth_header = request.headers.get("authorization", "")
+    bearer_token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
+    
+    if (not session or session != settings.SESSION_SECRET) and (not bearer_token or bearer_token != settings.SESSION_SECRET):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated. Please log in.",
         )
     return "admin"
+
 
 def generate_id(prefix: str) -> str:
     return f"{prefix}-{str(uuid.uuid4())[:8]}"
@@ -279,23 +296,31 @@ def login(request: Request, admin_login: AdminLogin, db: Session = Depends(get_d
         login_attempts[device_id] = {"attempts": 0, "blocked_until": None}
 
     # Set HttpOnly session cookie (JS cannot read this)
+    secure_cookie = is_secure_context(request)
     response = JSONResponse({"ok": True})
     response.set_cookie(
         key="admin_session",
         value=settings.SESSION_SECRET,
         httponly=True,        # Invisible to JavaScript — XSS safe
-        samesite="none",    # Blocks cross-site requests — CSRF safe
-        secure=True,         # Set True when deploying on HTTPS
+        samesite="none" if secure_cookie else "lax",  # "none" + secure=True for cross-origin (Vercel -> Render)
+        secure=secure_cookie, # True on HTTPS / Production
         max_age=60 * 60 * 8,  # 8 hours
         path="/",
     )
     return response
 
 @app.post("/api/auth/logout")
-def logout(response: Response):
+def logout(request: Request, response: Response):
     """Clear the session cookie — effectively logs the admin out."""
-    response.delete_cookie(key="admin_session", path="/")
+    secure_cookie = is_secure_context(request)
+    response.delete_cookie(
+        key="admin_session",
+        path="/",
+        samesite="none" if secure_cookie else "lax",
+        secure=secure_cookie,
+    )
     return {"ok": True}
+
 
 @app.get("/api/auth/me")
 def me(request: Request, db: Session = Depends(get_db)):
@@ -539,6 +564,17 @@ async def save_portfolio(request: Request, db: Session = Depends(get_db)):
     return {"ok": True}
 
 # --- UPLOADS ---
+def save_file_safely(filename: str, file_bytes: bytes):
+    os.makedirs(SERVER_PUBLIC_DIR, exist_ok=True)
+    with open(os.path.join(SERVER_PUBLIC_DIR, filename), "wb") as f:
+        f.write(file_bytes)
+    try:
+        os.makedirs(PUBLIC_DIR, exist_ok=True)
+        with open(os.path.join(PUBLIC_DIR, filename), "wb") as f:
+            f.write(file_bytes)
+    except Exception:
+        pass
+
 @app.post("/api/upload/hero-portrait")
 def upload_hero_portrait(
     request: Request,
@@ -554,18 +590,16 @@ def upload_hero_portrait(
     if ext == "jpeg":
         ext = "jpg"
     filename = f"hero-portrait.{ext}"
-    os.makedirs(PUBLIC_DIR, exist_ok=True)
-    
-    with open(os.path.join(PUBLIC_DIR, filename), "wb") as f:
-        f.write(file_bytes)
+    save_file_safely(filename, file_bytes)
         
     for other in ["jpg", "png", "webp"]:
         if other == ext:
             continue
-        try:
-            os.remove(os.path.join(PUBLIC_DIR, f"hero-portrait.{other}"))
-        except Exception:
-            pass
+        for p_dir in [SERVER_PUBLIC_DIR, PUBLIC_DIR]:
+            try:
+                os.remove(os.path.join(p_dir, f"hero-portrait.{other}"))
+            except Exception:
+                pass
             
     settings_record = db.query(models.SiteSettings).filter(models.SiteSettings.id == 1).first()
     image_url = f"/{filename}"
@@ -592,9 +626,7 @@ def upload_project_image(
     safe_project_id = re.sub(r"[^a-zA-Z0-9_-]", "", project_id)
     filename = f"{safe_project_id}-{int(time.time())}.{ext}"
     
-    os.makedirs(PUBLIC_DIR, exist_ok=True)
-    with open(os.path.join(PUBLIC_DIR, filename), "wb") as f:
-        f.write(file_bytes)
+    save_file_safely(filename, file_bytes)
         
     return {"ok": True, "imageUrl": f"/{filename}"}
 
@@ -614,9 +646,7 @@ def upload_resume(
     if not filename.endswith(".pdf"):
         filename = f"{filename}.pdf"
         
-    os.makedirs(PUBLIC_DIR, exist_ok=True)
-    with open(os.path.join(PUBLIC_DIR, filename), "wb") as f:
-        f.write(file_bytes)
+    save_file_safely(filename, file_bytes)
         
     settings_record = db.query(models.SiteSettings).filter(models.SiteSettings.id == 1).first()
     resume_url = f"/{filename}"
@@ -625,6 +655,7 @@ def upload_resume(
         db.commit()
     
     return {"ok": True, "resumeUrl": resume_url}
+
 
 # --- CONTACT & MESSAGES ---
 @app.post("/api/contact", status_code=201)
@@ -739,12 +770,32 @@ def get_analytics(request: Request, db: Session = Depends(get_db)):
         "uniqueVisitors": analytics.unique_visitors,
         "lastViewAt": analytics.last_view_at.isoformat() if analytics.last_view_at else None
     }
-# Mount static files at root for direct asset access
-app.mount("/", StaticFiles(directory=PUBLIC_DIR), name="public")
+# Serve static assets (images, PDFs) from Portfolio/public WITHOUT shadowing API routes.
+# A root-level StaticFiles mount intercepts every request (including /api/*) and throws
+# 500 errors when no matching file is found. Using an explicit route avoids that.
+from fastapi.responses import FileResponse
+
+@app.get("/{filename:path}")
+def serve_static_file(filename: str):
+    """Serve uploaded public assets (hero images, project images, resume PDF).
+    Only serves files that actually exist in SERVER_PUBLIC_DIR or PUBLIC_DIR; everything else 404s cleanly."""
+    allowed_extensions = (".jpg", ".jpeg", ".png", ".webp", ".pdf", ".gif", ".svg")
+    if not any(filename.lower().endswith(ext) for ext in allowed_extensions):
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    base_name = os.path.basename(filename)
+    filepath = os.path.join(SERVER_PUBLIC_DIR, base_name)
+    if not os.path.isfile(filepath):
+        filepath = os.path.join(PUBLIC_DIR, base_name)
+        
+    if not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(filepath)
+
 
 # 8. LOCAL SERVER RUNNER
 if __name__ == "__main__":
     import uvicorn
     # Start server on config-specified port
     print(f"Starting server on port {settings.PORT}...")
-    uvicorn.run("App:app", host="127.0.0.1", port=settings.PORT, reload=True)
+    uvicorn.run("app:app", host="127.0.0.1", port=settings.PORT, reload=True)
