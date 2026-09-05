@@ -7,10 +7,10 @@ from config import settings
 # 1. AUTOMATIC DATABASE CREATION HELPER (Local Development Safe)
 def ensure_database_exists(mysql_url: str):
     try:
-        url = make_url(mysql_url)
+        raw_url = mysql_url.split("?")[0] if "?" in mysql_url else mysql_url
+        url = make_url(raw_url)
         db_name = url.database
         host = url.host or 'localhost'
-        # Only attempt automatic creation on local development environments
         if db_name and (host in ('localhost', '127.0.0.1') or 'localhost' in host):
             password_str = url.password or ''
             if '%' not in password_str:
@@ -29,9 +29,19 @@ def ensure_database_exists(mysql_url: str):
 # Run the database verification/creation before creating the main engine
 ensure_database_exists(settings.MYSQL_URL)
 
+# 2. MAIN DATABASE ENGINE WITH AUTO CLOUD SSL SUPPORT
+clean_url = settings.MYSQL_URL
+connect_args = {}
 
-# 2. MAIN DATABASE ENGINE
-engine = create_engine(settings.MYSQL_URL, pool_pre_ping=True)
+# Strip query parameters (like ?ssl-mode=REQUIRED or ?ssl_mode=REQUIRED)
+if "?" in clean_url:
+    clean_url = clean_url.split("?")[0]
+
+# Enable SSL automatically for remote cloud databases (e.g. Aiven)
+if "localhost" not in clean_url and "127.0.0.1" not in clean_url:
+    connect_args = {"ssl": {}}
+
+engine = create_engine(clean_url, connect_args=connect_args, pool_pre_ping=True)
 
 # 3. SESSION MAKER
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
