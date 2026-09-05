@@ -57,16 +57,9 @@ export const mission = {
   ],
 };
 
-// Compute tech count directly from skillsSection so it's always accurate
-const _techCount = new Set(
-  skillsSection.categories.flatMap((cat) =>
-    (cat.items ?? []).map((item) => item.name?.trim().toLowerCase()).filter(Boolean)
-  )
-).size;
-
 export const stats = [
   { value: "4+", label: "PROJECTS SHIPPED", color: "#7dd3fc" },
-  { value: `${_techCount}+`, label: "TECH STACKS MASTERED", color: "#60a5fa" },
+  { value: "12+", label: "TECH STACKS MASTERED", color: "#60a5fa" },
   { value: "850+", label: "GITHUB COMMITS", color: "#22d3ee" },
   { value: "2,000+", label: "COFFEE/CODE HOURS", color: "#c4b5fd" },
 ];
