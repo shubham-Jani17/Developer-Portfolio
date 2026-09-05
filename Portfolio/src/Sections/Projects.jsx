@@ -1,309 +1,288 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { usePortfolio } from "../context/PortfolioContext";
-import GlassCard from "../Components/GlassCard";
-import GradientTitle from "../Components/GradientTitle";
-import { getProjectCategoryFilters } from "../utils/projectFilters";
-import { FaGithub } from "react-icons/fa";
-import { HiArrowUpRight } from "react-icons/hi2";
-import ProxyErrorSymbol from "../Components/ProxyErrorSymbol";
+/**
+ * Portfolio content — edit this file to update the site.
+ */
 
-/* ─── Shared image panel ──────────────────────────────────────────────────── */
-function ProjectImage({ project, side }) {
-  return (
-    <div
-      className={`relative w-[42%] shrink-0 overflow-hidden bg-slate-900/50 ${
-        side === "left" ? "border-r border-white/5" : "border-l border-white/5"
-      }`}
-    >
-      {project.image ? (
-        <img
-          src={project.image}
-          alt={project.title}
-          className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-700"
-        />
-      ) : (
-        <div className="flex items-center justify-center w-full h-full bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950/20 grid-bg">
-          <span className="font-display font-black text-5xl tracking-widest text-white/5 uppercase select-none">
-            {project.title.slice(0, 2)}
-          </span>
-        </div>
-      )}
-      {project.category && (
-        <span className="absolute top-4 left-4 rounded-full border border-cyan-400/30 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 font-mono-display text-[9px] tracking-wider text-cyan-300">
-          {project.category}
-        </span>
-      )}
-    </div>
-  );
-}
+/** Optional photo: place `hero-portrait.jpg` in the `public/` folder */
+export const HERO_PORTRAIT_URL = "/hero-portrait.jpg";
 
-/* ─── Magazine card — large screens ──────────────────────────────────────── */
-function MagazineCard({ project, index }) {
-  const isEven = index % 2 === 0;
+export const site = {
+  name: "Shubham Jani",
+  title: "Full Stack Developer",
+  initials: "SJ",
+  domain: "shubham.dev",
+  location: "Ahmedabad, India",
+  email: "shubhamjani1731@gmail.com",
+  resumeUrl: "/Shubham Jani Resume.pdf",
+  availability: "Open for internships, freelance & collaborations",
+};
 
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 40 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 20 }}
-      transition={{ duration: 0.45, delay: index * 0.07 }}
-    >
-      <GlassCard className="flex flex-row overflow-hidden group hover:border-cyan-500/30 transition-all duration-500 min-h-[280px]">
-        {isEven && <ProjectImage project={project} side="left" />}
+export const hero = {
+  availabilityBadge: "AVAILABLE FOR NEW WORK",
+  firstName: "Shubham",
+  lastName: "Jani.",
+  roles: ["Python & Flask Engineer", "Full Stack Developer", "FastAPI & SvelteKit Builder"],
+  bio:
+    "M.Sc. Computer Applications & IT at Gujarat University. I build real-world products with Python, Flask, FastAPI, and SvelteKit — from construction platforms to voice AI assistants.",
+  techTag: "Python • Flask • FastAPI",
+  shippedLabel: "shipped 4+",
+  statusLabel: "STATUS",
+  statusText: "Currently building real-world products",
+  serverStatus: "Spinning up Servers",
+  image: HERO_PORTRAIT_URL,
+  imageAlt: "Shubham Jani portrait",
+};
 
-        {/* Content */}
-        <div className="flex flex-col justify-center flex-1 p-8 xl:p-10">
-          <p className="font-mono-display text-[10px] tracking-[0.25em] uppercase text-cyan-400/70 mb-3">
-            PROJECT / {String(index + 1).padStart(2, "0")}
-          </p>
+export const statement = {
+  title: { before: "A student builder with a ", highlight: "product mind.", after: "" },
+  subtitle:
+    "I love turning real-world problems into elegant, usable software — one focused project at a time.",
+};
 
-          <h3 className="font-display text-2xl xl:text-3xl font-bold text-foreground tracking-tight group-hover:text-cyan-300 transition-colors duration-300 leading-snug">
-            {project.title}
-          </h3>
+export const mission = {
+  eyebrow: "MISSION",
+  title: {
+    before: "I build digital products that feel ",
+    highlight: "obvious to use",
+    after: " — fast, practical, and rooted in solving genuine problems.",
+  },
+  body:
+    "Computer Applications student at Gujarat University. I ship full-stack apps with Python, Flask, FastAPI, and SvelteKit — including BuildTrack (construction management) and Sarthi (voice AI assistant).",
+  tags: [
+    "FULL STACK",
+    "PYTHON / FLASK",
+    "FASTAPI",
+    "SVELTEKIT",
+    "SQL / SQLITE",
+    "OPENCV / AI",
+  ],
+};
 
-          <div className="mt-3 mb-4 w-8 h-0.5 bg-gradient-to-r from-cyan-400 to-violet-500 rounded-full" />
+// Compute tech count directly from skillsSection so it's always accurate
+const _techCount = new Set(
+  skillsSection.categories.flatMap((cat) =>
+    (cat.items ?? []).map((item) => item.name?.trim().toLowerCase()).filter(Boolean)
+  )
+).size;
 
-          <p className="text-sm text-muted-foreground leading-relaxed max-w-lg">
-            {project.description}
-          </p>
+export const stats = [
+  { value: "4+", label: "PROJECTS SHIPPED", color: "#7dd3fc" },
+  { value: `${_techCount}+`, label: "TECH STACKS MASTERED", color: "#60a5fa" },
+  { value: "850+", label: "GITHUB COMMITS", color: "#22d3ee" },
+  { value: "2,000+", label: "COFFEE/CODE HOURS", color: "#c4b5fd" },
+];
 
-          {project.tags && project.tags.length > 0 && (
-            <ul className="mt-5 flex flex-wrap gap-2">
-              {project.tags.map((tag) => (
-                <li
-                  key={tag}
-                  className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 font-mono-display text-[10px] tracking-wide text-foreground/60 hover:border-cyan-500/30 hover:text-cyan-300 transition-all duration-200"
-                >
-                  {tag}
-                </li>
-              ))}
-            </ul>
-          )}
+export const social = [
+  { label: "GitHub", href: "https://github.com/shubham-Jani17", icon: "github" },
+  { label: "LinkedIn", href: "https://www.linkedin.com/in/shubhamjani", icon: "linkedin" },
+  { label: "Email", href: "mailto:shubhamjani1731@gmail.com", icon: "mail" },
+];
 
-          {(project.liveUrl || project.repoUrl) && (
-            <div className="mt-6 flex items-center gap-4">
-              {project.repoUrl && (
-                <a
-                  href={project.repoUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-xs font-mono-display tracking-wider px-4 py-2 rounded-full border border-white/10 bg-white/[0.03] text-muted-foreground hover:text-cyan-300 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all duration-300"
-                >
-                  <FaGithub className="text-sm" />
-                  GitHub
-                </a>
-              )}
-              {project.liveUrl && (
-                <a
-                  href={project.liveUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-xs font-mono-display tracking-wider px-4 py-2 rounded-full border border-cyan-500/20 bg-cyan-500/5 text-cyan-300 hover:bg-cyan-500/10 hover:border-cyan-400/40 transition-all duration-300"
-                >
-                  Live Demo
-                  <HiArrowUpRight className="text-sm" />
-                </a>
-              )}
-            </div>
-          )}
-        </div>
+export const contactSection = {
+  eyebrow: "GET IN TOUCH",
+  title: { before: "Let's build ", highlight: "something", after: " great." },
+  subtitle:
+    "Whether you have a brief, an idea, or just want to chat about craft — my inbox is open.",
+  statusBadge: "OPEN FOR INTERNSHIPS, FREELANCE & COLLABORATIONS",
+  infoTitle: "Reply within 24 hours.",
+  infoBody:
+    "I'm currently looking for full-stack internships, freelance projects and meaningful collaborations — especially around Python, FastAPI and applied AI.",
+  responseTime: "avg. response time • ~6 hours",
+  placeholders: {
+    name: "Jane Doe",
+    email: "jane@company.com",
+    message: "Tell me about your project, timelines, and what success looks like…",
+  },
+};
 
-        {!isEven && <ProjectImage project={project} side="right" />}
-      </GlassCard>
-    </motion.div>
-  );
-}
+export const footer = {
+  tagline:
+    "Engineered, designed and shipped with obsessive attention to detail. Built with React, Tailwind and Framer Motion.",
+  navigate: [
+    [
+      { id: "about", label: "About" },
+      { id: "projects", label: "Projects" },
+      { id: "blog", label: "Blog" },
+    ],
+    [
+      { id: "skills", label: "Skills" },
+      { id: "experience", label: "Experience" },
+      { id: "contact", label: "Contact" },
+    ],
+  ],
+  designedIn: "Designed in Figma",
+  shippedFrom: "Ahmedabad",
+};
 
-/* ─── Compact grid card — mobile / tablet ─────────────────────────────────── */
-function GridCard({ project }) {
-  return (
-    <GlassCard className="flex flex-col h-full overflow-hidden group hover:border-cyan-500/30 transition-all duration-300">
-      <div className="relative aspect-video w-full overflow-hidden bg-slate-900/50 border-b border-white/5">
-        {project.image ? (
-          <img
-            src={project.image}
-            alt={project.title}
-            className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
-          />
-        ) : (
-          <div className="flex items-center justify-center w-full h-full bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950/20 grid-bg relative">
-            <span className="font-display font-black text-2xl tracking-widest text-white/5 uppercase select-none">
-              {project.title.slice(0, 2)}
-            </span>
-          </div>
-        )}
-        {project.category && (
-          <span className="absolute top-4 left-4 rounded-full border border-cyan-400/30 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 font-mono-display text-[9px] tracking-wider text-cyan-300">
-            {project.category}
-          </span>
-        )}
-      </div>
+export const navLinks = [
+  { id: "about", label: "About" },
+  { id: "skills", label: "Skills" },
+  { id: "projects", label: "Projects" },
+  { id: "experience", label: "Experience" },
+  { id: "blog", label: "Blog" },
+  { id: "contact", label: "Contact" },
+];
 
-      <div className="flex flex-col flex-grow p-6">
-        <h3 className="font-display text-xl font-bold text-foreground tracking-tight group-hover:text-cyan-300 transition-colors duration-300">
-          {project.title}
-        </h3>
-        <p className="mt-3 text-sm text-muted-foreground leading-relaxed flex-grow">
-          {project.description}
-        </p>
+export const skillsSection = {
+  eyebrow: "SKILLS",
+  title: { before: "Tools I bend to ", highlight: "my", after: " will." },
+  subtitle: "A focused stack chosen for performance, longevity and developer happiness.",
+  orbit: [
+    "JavaScript",
+    "SvelteKit",
+    "Bootstrap",
+    "SQLite",
+    "Git",
+    "FastAPI",
+    "Flask",
+    "OpenCV",
+    "Python",
+    "MySQL",
+    "Tailwind",
+    "SQLAlchemy",
+  ],
+  categories: [
+    {
+      name: "Frontend",
+      items: [
+        { name: "HTML & CSS" },
+        { name: "JavaScript" },
+        { name: "Bootstrap" },
+        { name: "Tailwind" },
+        { name: "SvelteKit" },
+      ],
+    },
+    {
+      name: "Backend & Data",
+      items: [
+        { name: "Python" },
+        { name: "Flask" },
+        { name: "FastAPI" },
+        { name: "SQL / MySQL" },
+        { name: "SQLAlchemy" },
+      ],
+    },
+    {
+      name: "AI & IoT",
+      items: [
+        { name: "OpenCV" },
+        { name: "Face Recognition" },
+        { name: "NLP / Voice AI" },
+        { name: "IoT Prototyping" },
+        { name: "Computer Vision" },
+      ],
+    },
+    {
+      name: "Tools & Concepts",
+      items: [
+        { name: "Git & GitHub" },
+        { name: "VS Code" },
+        { name: "SQLite" },
+        { name: "EmailJS / FormSubmit" },
+        { name: "DBMS / OOP" },
+      ],
+    },
+  ],
+};
 
-        {project.tags && project.tags.length > 0 && (
-          <ul className="mt-6 flex flex-wrap gap-1.5">
-            {project.tags.map((tag) => (
-              <li
-                key={tag}
-                className="rounded border border-white/5 bg-white/[0.02] px-2 py-0.5 font-mono-display text-[9px] tracking-wide text-foreground/60"
-              >
-                {tag}
-              </li>
-            ))}
-          </ul>
-        )}
+export const projectsSection = {
+  eyebrow: "SELECTED WORK",
+  title: { before: "Projects I'm ", highlight: "proud", after: " of." },
+  subtitle: "A small selection of recent products — each one shipped with obsessive care.",
+};
 
-        {(project.liveUrl || project.repoUrl) && (
-          <div className="mt-6 pt-4 border-t border-white/5 flex items-center gap-4">
-            {project.repoUrl && (
-              <a
-                href={project.repoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-xs font-mono-display tracking-wider text-muted-foreground hover:text-cyan-300 transition-colors"
-              >
-                <FaGithub className="text-sm" /> CODE
-              </a>
-            )}
-            {project.liveUrl && (
-              <a
-                href={project.liveUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-xs font-mono-display tracking-wider text-muted-foreground hover:text-cyan-300 transition-colors ml-auto"
-              >
-                LIVE DEMO <HiArrowUpRight className="text-sm" />
-              </a>
-            )}
-          </div>
-        )}
-      </div>
-    </GlassCard>
-  );
-}
+export const projects = [
+  {
+    title: "BuildTrack",
+    category: "FULL STACK",
+    description:
+      "Construction management platform for tracking sites, materials, and teams — built with Flask and SQLite for real deployment.",
+    image: "",
+    tags: ["FLASK", "PYTHON", "SQLITE"],
+    liveUrl: "",
+    repoUrl: "https://github.com/yourusername/buildtrack",
+  },
+  {
+    title: "Sarthi Voice Assistant AI",
+    category: "AI",
+    description:
+      "Voice-first assistant with NLP pipeline, FastAPI backend, and SvelteKit UI for hands-free task flows.",
+    image: "",
+    tags: ["SVELTEKIT", "FASTAPI", "PYTHON", "NLP"],
+    liveUrl: "https://example.com",
+    repoUrl: "https://github.com/yourusername/sarthi",
+  },
+  {
+    title: "IoT Smart Monitor",
+    category: "IOT",
+    description: "Sensor dashboard with real-time readings, alerts, and lightweight edge integration.",
+    image: "",
+    tags: ["PYTHON", "IOT", "FLASK"],
+    liveUrl: "",
+    repoUrl: "https://github.com/yourusername/iot-monitor",
+  },
+];
 
-/* ─── Section ─────────────────────────────────────────────────────────────── */
-export default function Projects() {
-  const { portfolio, fromApi } = usePortfolio();
-  const projectsSection = portfolio.projectsSection ?? {
-    eyebrow: "SELECTED WORK",
-    title: { before: "Projects I'm ", highlight: "proud", after: " of." },
-    subtitle: "A small selection of recent products — each one shipped with obsessive care.",
-  };
-  const projects = portfolio.projects ?? [];
-  const [selectedFilter, setSelectedFilter] = useState("ALL");
+export const experienceSection = {
+  eyebrow: "MY JOURNEY",
+  title: {
+    before: "A timeline of ",
+    craft: "craft",
+    mid: " & ",
+    growth: "growth",
+    after: ".",
+  },
+  subtitle:
+    "Education, projects, and hands-on building — each chapter shaping how I design and ship software.",
+};
 
-  const filters = getProjectCategoryFilters(projects);
+export const experience = [
+  {
+    period: "2025 — 2027",
+    title: "M.Sc. (CA & IT)",
+    subtitle: "K. S. School of Business Management & IT",
+    description:
+      "Postgraduate focus on advanced computing, databases, and applied software engineering with research-oriented projects.",
+    tech: ["FULL STACK", "AI", "DBMS"],
+  },
+  {
+    period: "2023 — 2025",
+    title: "Student Builder · Freelance",
+    subtitle: "Independent / Client work",
+    description:
+      "Shipped portfolio and client apps with Python, Flask, FastAPI, and SvelteKit — from APIs to polished UIs.",
+    tech: ["PYTHON", "FLASK", "SVELTEKIT"],
+  },
+  {
+    period: "2021 — 2023",
+    title: "B.Sc. Computer Applications",
+    subtitle: "Gujarat University",
+    description:
+      "Built foundations in programming, OOP, web fundamentals, and capstone demos with measurable outcomes.",
+    tech: ["OOP", "SQL", "WEB"],
+  },
+  {
+    period: "2020 — Present",
+    title: "Projects & Open Source",
+    subtitle: "Self-directed learning",
+    description:
+      "BuildTrack, Sarthi Voice AI, and IoT experiments — learning by shipping real-world products end to end.",
+    tech: ["FASTAPI", "OPENCV", "IOT"],
+  },
+];
 
-  const filteredProjects =
-    selectedFilter === "ALL"
-      ? projects
-      : projects.filter(
-          (p) =>
-            (p.category ?? "").trim().toUpperCase() === selectedFilter.toUpperCase()
-        );
+export const sections = {
+  blogs: true,
+};
 
-  return (
-    <section id="projects" className="page-container section-pad relative">
-      <motion.header
-        className="mb-10 sm:mb-14 md:mb-20 text-center md:text-left"
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        transition={{ duration: 0.5 }}
-      >
-        <p className="font-mono-display text-[10px] sm:text-xs tracking-[0.2em] sm:tracking-[0.35em] uppercase text-muted-foreground mb-3 sm:mb-4">
-          {projectsSection.eyebrow}
-        </p>
-        <h2 className="font-display text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight leading-[1.12] sm:leading-[1.1] max-w-3xl mx-auto md:mx-0 text-balance">
-          <GradientTitle parts={projectsSection.title} />
-        </h2>
-        <p className="mt-4 text-muted-foreground text-base md:text-lg max-w-2xl mx-auto md:mx-0">
-          {projectsSection.subtitle}
-        </p>
-      </motion.header>
+export const blogs = [
+  {
+    title: "Building BuildTrack from scratch",
+    excerpt: "Lessons from shipping a Flask app for construction teams.",
+    url: "https://medium.com/@you/post",
+    date: "2025-01-15",
+  },
+];
 
-      {!fromApi ? (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-        >
-          <GlassCard className="flex flex-col items-center justify-center text-center p-10 py-16 border border-dashed border-white/10 hover:border-cyan-500/20 transition-all duration-300">
-            <ProxyErrorSymbol />
-            <h3 className="font-display text-2xl font-bold text-foreground">No items found!</h3>
-            <p className="mt-3 text-sm text-muted-foreground max-w-md">
-              Backend database is unreachable due to a proxy error.
-            </p>
-          </GlassCard>
-        </motion.div>
-      ) : (
-        <>
-          {/* Filter tabs */}
-          {filters.length > 1 && (
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-10 md:mb-12">
-              {filters.map((filter) => {
-                const isActive = selectedFilter.toUpperCase() === filter.toUpperCase();
-                return (
-                  <button
-                    key={filter}
-                    type="button"
-                    onClick={() => setSelectedFilter(filter)}
-                    className={`px-4 py-2 text-xs font-mono-display tracking-wider rounded-full border transition-all duration-300 cursor-pointer ${
-                      isActive
-                        ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.15)]"
-                        : "bg-white/[0.02] border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
-                    }`}
-                  >
-                    {filter}
-                  </button>
-                );
-              })}
-            </div>
-          )}
 
-          {/* ── Large screens: magazine alternating stack ── */}
-          <div className="hidden lg:flex flex-col gap-6">
-            <AnimatePresence mode="popLayout">
-              {filteredProjects.map((project, index) => (
-                <MagazineCard
-                  key={project.id || project.title}
-                  project={project}
-                  index={index}
-                />
-              ))}
-            </AnimatePresence>
-          </div>
 
-          {/* ── Mobile / tablet: compact grid ── */}
-          <motion.div layout className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:hidden">
-            <AnimatePresence mode="popLayout">
-              {filteredProjects.map((project) => (
-                <motion.div
-                  key={project.id || project.title}
-                  layout
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ duration: 0.35 }}
-                  className="h-full"
-                >
-                  <GridCard project={project} />
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </motion.div>
-        </>
-      )}
-    </section>
-  );
-}
+
