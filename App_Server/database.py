@@ -33,11 +33,9 @@ ensure_database_exists(settings.MYSQL_URL)
 clean_url = settings.MYSQL_URL
 connect_args = {}
 
-# Strip query parameters (like ?ssl-mode=REQUIRED or ?ssl_mode=REQUIRED)
 if "?" in clean_url:
     clean_url = clean_url.split("?")[0]
 
-# Enable SSL automatically for remote cloud databases (e.g. Aiven)
 if "localhost" not in clean_url and "127.0.0.1" not in clean_url:
     connect_args = {"ssl": {}}
 
