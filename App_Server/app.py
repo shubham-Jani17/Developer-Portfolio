@@ -27,7 +27,6 @@ SERVER_PUBLIC_DIR = os.path.join(APP_SERVER_DIR, "public")
 import hashlib
 from cryptography.fernet import Fernet
 
-# Derive a 32-byte URL-safe base64 key from SESSION_SECRET
 key_bytes = hashlib.sha256(settings.SESSION_SECRET.encode()).digest()
 fernet_key = base64.urlsafe_b64encode(key_bytes)
 cipher_suite = Fernet(fernet_key)
@@ -43,7 +42,6 @@ def decrypt_password(encrypted_password: str) -> str:
     try:
         return cipher_suite.decrypt(encrypted_password.encode('utf-8')).decode('utf-8')
     except Exception:
-        # If decryption fails (e.g. legacy plain text), return as is for migration
         return encrypted_password
 
 
@@ -71,7 +69,6 @@ class MessageUpdate(BaseModel):
 # 4. APP SETUP
 app = FastAPI(title="Portfolio API")
 
-# Parse origins from environment config
 cors_origins_list = [
     origin.strip()
     for origin in settings.CORS_ORIGINS.split(",")
@@ -84,15 +81,11 @@ for default_origin in ["http://localhost:3001", "http://127.0.0.1:3001", "http:/
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins_list,
-    allow_origin_regex=r"https://.*\.vercel\.app",  # Automatically allow any Vercel domain
-    allow_credentials=True,   # Required for cookies to be sent cross-origin
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-
-security = None  # HTTPBearer removed — now using HttpOnly cookies
 
 login_attempts = {}
 
@@ -108,7 +101,6 @@ def is_secure_context(request: Request) -> bool:
     return is_https or settings.ENVIRONMENT.lower() == "production"
 
 def check_admin(request: Request):
-    """Validate the HttpOnly session cookie or Bearer token on every protected route."""
     session = request.cookies.get("admin_session")
     auth_header = request.headers.get("authorization", "")
     bearer_token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
@@ -119,7 +111,6 @@ def check_admin(request: Request):
             detail="Not authenticated. Please log in.",
         )
     return "admin"
-
 
 def generate_id(prefix: str) -> str:
     return f"{prefix}-{str(uuid.uuid4())[:8]}"
@@ -143,15 +134,12 @@ def decode_base64_file(data_url: str, max_size_mb: int, allowed_types_regex: str
 # 6. DATABASE INIT & DEFAULT SYNC
 @app.on_event("startup")
 def startup_event():
-    # 1. Create tables automatically if they do not exist
     try:
-        # Check and apply database table modifications for existing installations
         from sqlalchemy import inspect, text
         inspector = inspect(engine)
         if inspector.has_table("admin"):
             columns = [c['name'] for c in inspector.get_columns('admin')]
             if 'email' not in columns:
-                print(">>> Altering table 'admin' to add 'email' column.")
                 with engine.connect() as conn:
                     conn.execute(text("ALTER TABLE admin ADD COLUMN email VARCHAR(100) UNIQUE DEFAULT NULL"))
                     conn.commit()
@@ -160,80 +148,72 @@ def startup_event():
             columns = [c['name'] for c in inspector.get_columns('skills')]
             with engine.connect() as conn:
                 if 'level' in columns:
-                    print(">>> Altering table 'skills' to drop 'level' column.")
                     conn.execute(text("ALTER TABLE skills DROP COLUMN level"))
                 if 'is_automation' in columns:
-                    print(">>> Altering table 'skills' to drop 'is_automation' column.")
                     conn.execute(text("ALTER TABLE skills DROP COLUMN is_automation"))
                 conn.commit()
-        
+    except Exception as inspect_err:
+        print(f"Schema inspection notice: {inspect_err}")
+
+    try:
         Base.metadata.create_all(bind=engine)
         print(">>> Database tables verified/created successfully.")
     except Exception as e:
         print(f"Error creating database tables on startup: {e}")
-        return
 
-    # 2. Sync/Seed Default Admin User
     db = None
     try:
         from database import SessionLocal
         db = SessionLocal()
-        admin = db.query(models.Admin).filter(models.Admin.username == "admin").first()
-        if not admin:
-            db_admin = models.Admin(username="admin", email=settings.ADMIN_EMAIL, password=encrypt_password(settings.ADMIN_PASSWORD))
-            db.add(db_admin)
-            db.commit()
-            print(">>> Default admin account setup successfully with encrypted password.")
-        else:
-            # Migrate to encrypted format if not already encrypted (Fernet strings start with gAAAA)
-            if not admin.password.startswith("gAAAA"):
-                admin.password = encrypt_password(admin.password)
+        if settings.ADMIN_EMAIL and settings.ADMIN_PASSWORD:
+            admin = db.query(models.Admin).filter(models.Admin.username == "admin").first()
+            if not admin:
+                db_admin = models.Admin(username="admin", email=settings.ADMIN_EMAIL.strip(), password=encrypt_password(settings.ADMIN_PASSWORD))
+                db.add(db_admin)
                 db.commit()
-                print(">>> Admin password migrated to encrypted format.")
-            
-            if not admin.email:
-                admin.email = settings.ADMIN_EMAIL
+                print(">>> Default admin account setup successfully with encrypted password.")
+            else:
+                if not admin.password.startswith("gAAAA") or decrypt_password(admin.password) != settings.ADMIN_PASSWORD:
+                    admin.password = encrypt_password(settings.ADMIN_PASSWORD)
+                admin.email = settings.ADMIN_EMAIL.strip()
                 db.commit()
-                print(">>> Default admin account updated with email.")
+                print(">>> Admin credentials synchronized from environment.")
 
-
-        # 3. Migrate legacy skills from site_settings.skills JSON column to new skills table if empty
         skills_count = db.query(models.Skill).count()
         if skills_count == 0:
             from sqlalchemy import inspect, text
             import json
             inspector = inspect(engine)
-            columns = [c['name'] for c in inspector.get_columns('site_settings')]
-            if 'skills' in columns:
-                row = db.execute(text("SELECT skills FROM site_settings LIMIT 1")).fetchone()
-                if row and row[0]:
-                    try:
-                        legacy_skills = row[0]
-                        if isinstance(legacy_skills, str):
-                            legacy_skills = json.loads(legacy_skills)
-                        
-                        if isinstance(legacy_skills, list) and len(legacy_skills) > 0:
-                            print(f">>> Migrating legacy skills from JSON: {legacy_skills}")
-                            for item in legacy_skills:
-                                if not isinstance(item, dict):
-                                    continue
-                                if 'items' in item and isinstance(item['items'], list):
-                                    cat_name = item.get('name', 'General')
-                                    for subitem in item['items']:
-                                        if isinstance(subitem, dict):
-                                            db.add(models.Skill(
-                                                category=cat_name,
-                                                name=subitem.get('name', '')
-                                            ))
-                                else:
-                                    db.add(models.Skill(
-                                        category=item.get('category', 'General'),
-                                        name=item.get('name', '')
-                                    ))
-                            db.commit()
-                            print(">>> Legacy skills migrated to 'skills' table successfully.")
-                    except Exception as parse_err:
-                        print(f"Error migrating legacy skills: {parse_err}")
+            if inspector.has_table("site_settings"):
+                columns = [c['name'] for c in inspector.get_columns('site_settings')]
+                if 'skills' in columns:
+                    row = db.execute(text("SELECT skills FROM site_settings LIMIT 1")).fetchone()
+                    if row and row[0]:
+                        try:
+                            legacy_skills = row[0]
+                            if isinstance(legacy_skills, str):
+                                legacy_skills = json.loads(legacy_skills)
+                            
+                            if isinstance(legacy_skills, list) and len(legacy_skills) > 0:
+                                for item in legacy_skills:
+                                    if not isinstance(item, dict):
+                                        continue
+                                    if 'items' in item and isinstance(item['items'], list):
+                                        cat_name = item.get('name', 'General')
+                                        for subitem in item['items']:
+                                            if isinstance(subitem, dict):
+                                                db.add(models.Skill(
+                                                    category=cat_name,
+                                                    name=subitem.get('name', '')
+                                                ))
+                                    else:
+                                        db.add(models.Skill(
+                                            category=item.get('category', 'General'),
+                                            name=item.get('name', '')
+                                        ))
+                                db.commit()
+                        except Exception as parse_err:
+                            print(f"Error migrating legacy skills: {parse_err}")
     except Exception as e:
         print(f"Error during startup seeding/migration: {e}")
     finally:
@@ -241,8 +221,6 @@ def startup_event():
             db.close()
 
 # 7. ROUTE HANDLERS
-
-# --- HEALTH & HOME ---
 @app.get("/api/health")
 def health():
     return {"ok": True}
@@ -257,7 +235,6 @@ def login(request: Request, admin_login: AdminLogin, db: Session = Depends(get_d
     device_id = request.headers.get("x-device-id") or get_client_ip(request)
     now = datetime.utcnow()
 
-    # Check if this device is currently locked out
     if device_id in login_attempts:
         record = login_attempts[device_id]
         if record["blocked_until"] and now < record["blocked_until"]:
@@ -269,9 +246,24 @@ def login(request: Request, admin_login: AdminLogin, db: Session = Depends(get_d
                 detail=f"Too many failed login attempts. Locked out. Try again in {remaining_minutes}m {remaining_seconds}s."
             )
 
-    admin = db.query(models.Admin).filter(models.Admin.email == admin_login.email).first()
+    input_email = admin_login.email.strip().lower()
+    admin = db.query(models.Admin).filter(models.Admin.email == input_email).first()
     
-    if not admin or admin_login.password != decrypt_password(admin.password):
+    is_env_match = (
+        bool(settings.ADMIN_EMAIL) and bool(settings.ADMIN_PASSWORD) and
+        input_email == settings.ADMIN_EMAIL.strip().lower() and
+        admin_login.password == settings.ADMIN_PASSWORD
+    )
+
+    if is_env_match:
+        if not admin:
+            admin = models.Admin(username="admin", email=settings.ADMIN_EMAIL.strip(), password=encrypt_password(settings.ADMIN_PASSWORD))
+            db.add(admin)
+            db.commit()
+        elif decrypt_password(admin.password) != settings.ADMIN_PASSWORD:
+            admin.password = encrypt_password(settings.ADMIN_PASSWORD)
+            db.commit()
+    elif not admin or admin_login.password != decrypt_password(admin.password):
         if device_id not in login_attempts:
             login_attempts[device_id] = {"attempts": 0, "blocked_until": None}
             
@@ -291,27 +283,24 @@ def login(request: Request, admin_login: AdminLogin, db: Session = Depends(get_d
                 detail=f"Invalid email or password. {attempts_left} attempts remaining."
             )
             
-    # Reset tracking upon successful login
     if device_id in login_attempts:
         login_attempts[device_id] = {"attempts": 0, "blocked_until": None}
 
-    # Set HttpOnly session cookie (JS cannot read this)
     secure_cookie = is_secure_context(request)
-    response = JSONResponse({"ok": True})
+    response = JSONResponse({"ok": True, "token": settings.SESSION_SECRET})
     response.set_cookie(
         key="admin_session",
         value=settings.SESSION_SECRET,
-        httponly=True,        # Invisible to JavaScript — XSS safe
-        samesite="none" if secure_cookie else "lax",  # "none" + secure=True for cross-origin (Vercel -> Render)
-        secure=secure_cookie, # True on HTTPS / Production
-        max_age=60 * 60 * 8,  # 8 hours
+        httponly=True,
+        samesite="none" if secure_cookie else "lax",
+        secure=secure_cookie,
+        max_age=60 * 60 * 8,
         path="/",
     )
     return response
 
 @app.post("/api/auth/logout")
 def logout(request: Request, response: Response):
-    """Clear the session cookie — effectively logs the admin out."""
     secure_cookie = is_secure_context(request)
     response.delete_cookie(
         key="admin_session",
@@ -321,10 +310,8 @@ def logout(request: Request, response: Response):
     )
     return {"ok": True}
 
-
 @app.get("/api/auth/me")
 def me(request: Request, db: Session = Depends(get_db)):
-    """Returns 200 if the session cookie is valid, 401 otherwise."""
     check_admin(request)
     admin = db.query(models.Admin).filter(models.Admin.username == "admin").first()
     email = admin.email if admin else ""
@@ -344,7 +331,6 @@ def update_password(
     if pwd_update.currentPassword != decrypt_password(admin_record.password):
         raise HTTPException(status_code=400, detail="Incorrect current password")
         
-    # Validation checks for strength
     new_pwd = pwd_update.newPassword
     if (len(new_pwd) < 8 or not re.search("[A-Z]", new_pwd) or 
         not re.search("[a-z]", new_pwd) or not re.search("[0-9]", new_pwd) or 
@@ -412,20 +398,14 @@ def get_portfolio(response: Response, includeArchived: str = "false", db: Sessio
     experiences = exp_q.order_by(models.Experience.created_at.desc()).all()
     blogs = blog_q.order_by(models.Blog.created_at.desc()).all()
 
-    # Query skills from skills table, preserving insertion order (id.asc())
     skills_query = db.query(models.Skill).order_by(models.Skill.id.asc()).all()
     categories_map = {}
     for s in skills_query:
         if s.category not in categories_map:
             categories_map[s.category] = []
-        categories_map[s.category].append({
-            "name": s.name
-        })
+        categories_map[s.category].append({"name": s.name})
     skills_list = [
-        {
-            "name": cat_name,
-            "items": items
-        }
+        {"name": cat_name, "items": items}
         for cat_name, items in categories_map.items()
     ]
 
@@ -435,9 +415,7 @@ def get_portfolio(response: Response, includeArchived: str = "false", db: Sessio
             "location": settings_record.location or "",
             "resumeUrl": settings_record.resume_url or ""
         },
-        "hero": {
-            "image": settings_record.hero_image or ""
-        },
+        "hero": {"image": settings_record.hero_image or ""},
         "social": settings_record.social or [],
         "mission": {
             "body": settings_record.mission_body or "",
@@ -506,17 +484,12 @@ async def save_portfolio(request: Request, db: Session = Depends(get_db)):
     settings_record.social = body.get("social", [])
     settings_record.stats = body.get("stats", [])
 
-    # Synchronize database tables
     db.query(models.Skill).delete()
-    db.execute(text("ALTER TABLE skills AUTO_INCREMENT = 1;"))
     for cat in body.get("skills", []):
         category_name = cat.get("name", "")
         for item in cat.get("items", []):
             name_val = item.get("name", "").strip()
-            db.add(models.Skill(
-                category=category_name,
-                name=name_val
-            ))
+            db.add(models.Skill(category=category_name, name=name_val))
 
     base_time = datetime.utcnow()
 
@@ -625,9 +598,7 @@ def upload_project_image(
         ext = "jpg"
     safe_project_id = re.sub(r"[^a-zA-Z0-9_-]", "", project_id)
     filename = f"{safe_project_id}-{int(time.time())}.{ext}"
-    
     save_file_safely(filename, file_bytes)
-        
     return {"ok": True, "imageUrl": f"/{filename}"}
 
 @app.post("/api/upload/resume")
@@ -655,7 +626,6 @@ def upload_resume(
         db.commit()
     
     return {"ok": True, "resumeUrl": resume_url}
-
 
 # --- CONTACT & MESSAGES ---
 @app.post("/api/contact", status_code=201)
@@ -713,7 +683,7 @@ def update_message(
         "message": msg.message,
         "status": msg.status,
         "archived": msg.archived,
-        "createdAt": msg.created_at.isoformat() if msg.created_at else None
+        "createdAt": m.created_at.isoformat() if msg.created_at else None
     }
 
 @app.delete("/api/messages/{msg_id}")
@@ -770,15 +740,10 @@ def get_analytics(request: Request, db: Session = Depends(get_db)):
         "uniqueVisitors": analytics.unique_visitors,
         "lastViewAt": analytics.last_view_at.isoformat() if analytics.last_view_at else None
     }
-# Serve static assets (images, PDFs) from Portfolio/public WITHOUT shadowing API routes.
-# A root-level StaticFiles mount intercepts every request (including /api/*) and throws
-# 500 errors when no matching file is found. Using an explicit route avoids that.
-from fastapi.responses import FileResponse
 
+# --- STATIC FILE SERVING ---
 @app.get("/{filename:path}")
 def serve_static_file(filename: str):
-    """Serve uploaded public assets (hero images, project images, resume PDF).
-    Only serves files that actually exist in SERVER_PUBLIC_DIR or PUBLIC_DIR; everything else 404s cleanly."""
     allowed_extensions = (".jpg", ".jpeg", ".png", ".webp", ".pdf", ".gif", ".svg")
     if not any(filename.lower().endswith(ext) for ext in allowed_extensions):
         raise HTTPException(status_code=404, detail="Not found")
@@ -792,10 +757,6 @@ def serve_static_file(filename: str):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(filepath)
 
-
-# 8. LOCAL SERVER RUNNER
 if __name__ == "__main__":
     import uvicorn
-    # Start server on config-specified port
-    print(f"Starting server on port {settings.PORT}...")
     uvicorn.run("app:app", host="127.0.0.1", port=settings.PORT, reload=True)
