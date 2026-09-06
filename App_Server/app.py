@@ -27,6 +27,7 @@ SERVER_PUBLIC_DIR = os.path.join(APP_SERVER_DIR, "public")
 import hashlib
 from cryptography.fernet import Fernet
 
+# Derive a 32-byte URL-safe base64 key from SESSION_SECRET
 key_bytes = hashlib.sha256(settings.SESSION_SECRET.encode()).digest()
 fernet_key = base64.urlsafe_b64encode(key_bytes)
 cipher_suite = Fernet(fernet_key)
@@ -42,6 +43,7 @@ def decrypt_password(encrypted_password: str) -> str:
     try:
         return cipher_suite.decrypt(encrypted_password.encode('utf-8')).decode('utf-8')
     except Exception:
+        # If decryption fails (e.g. legacy plain text), return as is for migration
         return encrypted_password
 
 
@@ -69,6 +71,7 @@ class MessageUpdate(BaseModel):
 # 4. APP SETUP
 app = FastAPI(title="Portfolio API")
 
+# Parse origins from environment config
 cors_origins_list = [
     origin.strip()
     for origin in settings.CORS_ORIGINS.split(",")
@@ -81,11 +84,15 @@ for default_origin in ["http://localhost:3001", "http://127.0.0.1:3001", "http:/
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins_list,
-    allow_origin_regex=r"https://.*\.vercel\.app",
-    allow_credentials=True,
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Automatically allow any Vercel domain
+    allow_credentials=True,   # Required for cookies to be sent cross-origin
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+
+security = None  # HTTPBearer removed — now using HttpOnly cookies
 
 login_attempts = {}
 
@@ -101,6 +108,7 @@ def is_secure_context(request: Request) -> bool:
     return is_https or settings.ENVIRONMENT.lower() == "production"
 
 def check_admin(request: Request):
+    """Validate the HttpOnly session cookie or Bearer token on every protected route."""
     session = request.cookies.get("admin_session")
     auth_header = request.headers.get("authorization", "")
     bearer_token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
@@ -111,6 +119,7 @@ def check_admin(request: Request):
             detail="Not authenticated. Please log in.",
         )
     return "admin"
+
 
 def generate_id(prefix: str) -> str:
     return f"{prefix}-{str(uuid.uuid4())[:8]}"
@@ -152,6 +161,33 @@ def startup_event():
                 if 'is_automation' in columns:
                     conn.execute(text("ALTER TABLE skills DROP COLUMN is_automation"))
                 conn.commit()
+
+        if inspector.has_table("certifications"):
+            columns = [c['name'] for c in inspector.get_columns('certifications')]
+            certification_columns = {
+                "credential_id": "VARCHAR(150) DEFAULT NULL",
+                "issued_date": "VARCHAR(20) DEFAULT NULL",
+                "expiration_date": "VARCHAR(20) DEFAULT NULL",
+                "credential_url": "VARCHAR(500) DEFAULT NULL",
+                "image_url": "VARCHAR(500) DEFAULT NULL",
+                "description": "TEXT DEFAULT NULL",
+                "skills": "JSON DEFAULT NULL",
+                "display_order": "INT NOT NULL DEFAULT 0",
+                "updated_at": "DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+            }
+            with engine.connect() as conn:
+                # Retain legacy fields during migration so installations with existing
+                # records continue to work; their values are copied into new columns.
+                for name, definition in certification_columns.items():
+                    if name not in columns:
+                        conn.execute(text(f"ALTER TABLE certifications ADD COLUMN {name} {definition}"))
+                if "url" in columns and "credential_url" not in columns:
+                    conn.execute(text("UPDATE certifications SET credential_url = url WHERE credential_url IS NULL"))
+                if "image" in columns and "image_url" not in columns:
+                    conn.execute(text("UPDATE certifications SET image_url = image WHERE image_url IS NULL"))
+                if "date" in columns and "issued_date" not in columns:
+                    conn.execute(text("UPDATE certifications SET issued_date = date WHERE issued_date IS NULL"))
+                conn.commit()
     except Exception as inspect_err:
         print(f"Schema inspection notice: {inspect_err}")
 
@@ -161,6 +197,7 @@ def startup_event():
     except Exception as e:
         print(f"Error creating database tables on startup: {e}")
 
+    # Sync/Seed Default Admin User
     db = None
     try:
         from database import SessionLocal
@@ -235,6 +272,7 @@ def login(request: Request, admin_login: AdminLogin, db: Session = Depends(get_d
     device_id = request.headers.get("x-device-id") or get_client_ip(request)
     now = datetime.utcnow()
 
+    # Check if this device is currently locked out
     if device_id in login_attempts:
         record = login_attempts[device_id]
         if record["blocked_until"] and now < record["blocked_until"]:
@@ -249,6 +287,7 @@ def login(request: Request, admin_login: AdminLogin, db: Session = Depends(get_d
     input_email = admin_login.email.strip().lower()
     admin = db.query(models.Admin).filter(models.Admin.email == input_email).first()
     
+    # Direct environment variable verification fallback
     is_env_match = (
         bool(settings.ADMIN_EMAIL) and bool(settings.ADMIN_PASSWORD) and
         input_email == settings.ADMIN_EMAIL.strip().lower() and
@@ -282,25 +321,30 @@ def login(request: Request, admin_login: AdminLogin, db: Session = Depends(get_d
                 status_code=400,
                 detail=f"Invalid email or password. {attempts_left} attempts remaining."
             )
+
             
+    # Reset tracking upon successful login
     if device_id in login_attempts:
         login_attempts[device_id] = {"attempts": 0, "blocked_until": None}
 
+    # Set HttpOnly session cookie (JS cannot read this) and return token for header auth
     secure_cookie = is_secure_context(request)
     response = JSONResponse({"ok": True, "token": settings.SESSION_SECRET})
+
     response.set_cookie(
         key="admin_session",
         value=settings.SESSION_SECRET,
-        httponly=True,
-        samesite="none" if secure_cookie else "lax",
-        secure=secure_cookie,
-        max_age=60 * 60 * 8,
+        httponly=True,        # Invisible to JavaScript — XSS safe
+        samesite="none" if secure_cookie else "lax",  # "none" + secure=True for cross-origin (Vercel -> Render)
+        secure=secure_cookie, # True on HTTPS / Production
+        max_age=60 * 60 * 8,  # 8 hours
         path="/",
     )
     return response
 
 @app.post("/api/auth/logout")
 def logout(request: Request, response: Response):
+    """Clear the session cookie — effectively logs the admin out."""
     secure_cookie = is_secure_context(request)
     response.delete_cookie(
         key="admin_session",
@@ -310,8 +354,10 @@ def logout(request: Request, response: Response):
     )
     return {"ok": True}
 
+
 @app.get("/api/auth/me")
 def me(request: Request, db: Session = Depends(get_db)):
+    """Returns 200 if the session cookie is valid, 401 otherwise."""
     check_admin(request)
     admin = db.query(models.Admin).filter(models.Admin.username == "admin").first()
     email = admin.email if admin else ""
@@ -331,6 +377,7 @@ def update_password(
     if pwd_update.currentPassword != decrypt_password(admin_record.password):
         raise HTTPException(status_code=400, detail="Incorrect current password")
         
+    # Validation checks for strength
     new_pwd = pwd_update.newPassword
     if (len(new_pwd) < 8 or not re.search("[A-Z]", new_pwd) or 
         not re.search("[a-z]", new_pwd) or not re.search("[0-9]", new_pwd) or 
@@ -388,24 +435,36 @@ def get_portfolio(response: Response, includeArchived: str = "false", db: Sessio
     proj_q = db.query(models.Project)
     exp_q = db.query(models.Experience)
     blog_q = db.query(models.Blog)
+    cert_q = db.query(models.Certification)
 
     if includeArchived != "true":
         proj_q = proj_q.filter(models.Project.archived == False)
         exp_q = exp_q.filter(models.Experience.archived == False)
         blog_q = blog_q.filter(models.Blog.archived == False)
+        cert_q = cert_q.filter(models.Certification.archived == False)
 
     projects = proj_q.order_by(models.Project.created_at.desc()).all()
     experiences = exp_q.order_by(models.Experience.created_at.desc()).all()
     blogs = blog_q.order_by(models.Blog.created_at.desc()).all()
+    certifications = cert_q.order_by(
+        models.Certification.display_order.asc(),
+        models.Certification.created_at.desc(),
+    ).all()
 
+    # Query skills from skills table, preserving insertion order (id.asc())
     skills_query = db.query(models.Skill).order_by(models.Skill.id.asc()).all()
     categories_map = {}
     for s in skills_query:
         if s.category not in categories_map:
             categories_map[s.category] = []
-        categories_map[s.category].append({"name": s.name})
+        categories_map[s.category].append({
+            "name": s.name
+        })
     skills_list = [
-        {"name": cat_name, "items": items}
+        {
+            "name": cat_name,
+            "items": items
+        }
         for cat_name, items in categories_map.items()
     ]
 
@@ -415,7 +474,9 @@ def get_portfolio(response: Response, includeArchived: str = "false", db: Sessio
             "location": settings_record.location or "",
             "resumeUrl": settings_record.resume_url or ""
         },
-        "hero": {"image": settings_record.hero_image or ""},
+        "hero": {
+            "image": settings_record.hero_image or ""
+        },
         "social": settings_record.social or [],
         "mission": {
             "body": settings_record.mission_body or "",
@@ -456,6 +517,26 @@ def get_portfolio(response: Response, includeArchived: str = "false", db: Sessio
                 "date": b.date or "",
                 "archived": b.archived
             } for b in blogs
+        ],
+        "certifications": [
+            {
+                "id": c.id,
+                "title": c.title,
+                "issuer": c.issuer or "",
+                "credentialId": c.credential_id or "",
+                "issuedDate": c.issued_date or "",
+                "expirationDate": c.expiration_date or "",
+                "credentialUrl": c.credential_url or "",
+                "imageUrl": c.image_url or "",
+                "description": c.description or "",
+                "skills": c.skills or [],
+                "displayOrder": c.display_order,
+                "archived": c.archived,
+                # Legacy aliases keep older clients working while they upgrade.
+                "date": c.issued_date or "",
+                "url": c.credential_url or "",
+                "image": c.image_url or "",
+            } for c in certifications
         ]
     }
 
@@ -484,12 +565,17 @@ async def save_portfolio(request: Request, db: Session = Depends(get_db)):
     settings_record.social = body.get("social", [])
     settings_record.stats = body.get("stats", [])
 
+    # Synchronize database tables
     db.query(models.Skill).delete()
+    db.execute(text("ALTER TABLE skills AUTO_INCREMENT = 1;"))
     for cat in body.get("skills", []):
         category_name = cat.get("name", "")
         for item in cat.get("items", []):
             name_val = item.get("name", "").strip()
-            db.add(models.Skill(category=category_name, name=name_val))
+            db.add(models.Skill(
+                category=category_name,
+                name=name_val
+            ))
 
     base_time = datetime.utcnow()
 
@@ -530,6 +616,24 @@ async def save_portfolio(request: Request, db: Session = Depends(get_db)):
             url=b.get("url", ""),
             date=b.get("date", ""),
             archived=bool(b.get("archived", False)),
+            created_at=base_time - timedelta(seconds=idx)
+        ))
+
+    db.query(models.Certification).delete()
+    for idx, c in enumerate(body.get("certifications", [])):
+        db.add(models.Certification(
+            id=c.get("id") or generate_id("cert"),
+            title=c.get("title", "Untitled certification").strip() or "Untitled certification",
+            issuer=c.get("issuer", ""),
+            credential_id=c.get("credentialId", ""),
+            issued_date=c.get("issuedDate", c.get("date", "")),
+            expiration_date=c.get("expirationDate", ""),
+            credential_url=c.get("credentialUrl", c.get("url", "")),
+            image_url=c.get("imageUrl", c.get("image", "")),
+            description=c.get("description", ""),
+            skills=c.get("skills", []),
+            display_order=int(c.get("displayOrder", idx) or 0),
+            archived=bool(c.get("archived", False)),
             created_at=base_time - timedelta(seconds=idx)
         ))
 
@@ -598,7 +702,30 @@ def upload_project_image(
         ext = "jpg"
     safe_project_id = re.sub(r"[^a-zA-Z0-9_-]", "", project_id)
     filename = f"{safe_project_id}-{int(time.time())}.{ext}"
+    
     save_file_safely(filename, file_bytes)
+        
+    return {"ok": True, "imageUrl": f"/{filename}"}
+
+@app.post("/api/upload/certification-image")
+def upload_certification_image(
+    request: Request,
+    payload: dict = Body(...)
+):
+    check_admin(request)
+    data_url = payload.get("dataUrl")
+    cert_id = payload.get("certId", "cert")
+    if not data_url:
+        raise HTTPException(status_code=400, detail="dataUrl is required")
+
+    file_bytes, ext = decode_base64_file(data_url, 5, r"^data:image/(jpeg|jpg|png|webp);base64,(.+)$")
+    if ext == "jpeg":
+        ext = "jpg"
+    safe_cert_id = re.sub(r"[^a-zA-Z0-9_-]", "", cert_id)
+    filename = f"cert-{safe_cert_id}-{int(time.time())}.{ext}"
+
+    save_file_safely(filename, file_bytes)
+
     return {"ok": True, "imageUrl": f"/{filename}"}
 
 @app.post("/api/upload/resume")
@@ -626,6 +753,7 @@ def upload_resume(
         db.commit()
     
     return {"ok": True, "resumeUrl": resume_url}
+
 
 # --- CONTACT & MESSAGES ---
 @app.post("/api/contact", status_code=201)
@@ -683,7 +811,7 @@ def update_message(
         "message": msg.message,
         "status": msg.status,
         "archived": msg.archived,
-        "createdAt": m.created_at.isoformat() if msg.created_at else None
+        "createdAt": msg.created_at.isoformat() if msg.created_at else None
     }
 
 @app.delete("/api/messages/{msg_id}")
@@ -740,10 +868,15 @@ def get_analytics(request: Request, db: Session = Depends(get_db)):
         "uniqueVisitors": analytics.unique_visitors,
         "lastViewAt": analytics.last_view_at.isoformat() if analytics.last_view_at else None
     }
+# Serve static assets (images, PDFs) from Portfolio/public WITHOUT shadowing API routes.
+# A root-level StaticFiles mount intercepts every request (including /api/*) and throws
+# 500 errors when no matching file is found. Using an explicit route avoids that.
+from fastapi.responses import FileResponse
 
-# --- STATIC FILE SERVING ---
 @app.get("/{filename:path}")
 def serve_static_file(filename: str):
+    """Serve uploaded public assets (hero images, project images, resume PDF).
+    Only serves files that actually exist in SERVER_PUBLIC_DIR or PUBLIC_DIR; everything else 404s cleanly."""
     allowed_extensions = (".jpg", ".jpeg", ".png", ".webp", ".pdf", ".gif", ".svg")
     if not any(filename.lower().endswith(ext) for ext in allowed_extensions):
         raise HTTPException(status_code=404, detail="Not found")
@@ -757,6 +890,10 @@ def serve_static_file(filename: str):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(filepath)
 
+
+# 8. LOCAL SERVER RUNNER
 if __name__ == "__main__":
     import uvicorn
+    # Start server on config-specified port
+    print(f"Starting server on port {settings.PORT}...")
     uvicorn.run("app:app", host="127.0.0.1", port=settings.PORT, reload=True)
