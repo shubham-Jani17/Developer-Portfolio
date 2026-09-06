@@ -17,7 +17,7 @@ export const site = {
 };
 
 export const hero = {
-  availabilityBadge: "AVAILABLE FOR NEW WORK",
+  availabilityBadge: "AVAILABLE FOR NEW OPPORTUNITIES",
   firstName: "Shubham",
   lastName: "Jani.",
   roles: ["Python & Flask Engineer", "Full Stack Developer", "FastAPI & SvelteKit Builder"],
@@ -76,7 +76,6 @@ export const contactSection = {
   subtitle:
     "Whether you have a brief, an idea, or just want to chat about craft — my inbox is open.",
   statusBadge: "OPEN FOR INTERNSHIPS, FREELANCE & COLLABORATIONS",
-  infoTitle: "Reply within 24 hours.",
   infoBody:
     "I'm currently looking for full-stack internships, freelance projects and meaningful collaborations — especially around Python, FastAPI and applied AI.",
   responseTime: "avg. response time • ~6 hours",
